@@ -1,0 +1,35 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: pr-sense
+
+azure:
+  devops:
+    org: <YOUR_AZURE_DEVOPS_ORG>
+    pat: <YOUR_AZURE_DEVOPS_PAT>
+    base-url: https://dev.azure.com/<YOUR_AZURE_DEVOPS_ORG>
+
+openai:
+  api-key: <YOUR_OPENAI_API_KEY>
+  model: gpt-4o
+  max-tokens: 4096
+  temperature: 0.3
+
+webhook:
+  secret: dummy
+
+review:
+  max-files: 15
+  max-lines: 300
+  skip-extensions:
+    - .yml
+    - .yaml
+    - .xml
+    - .sql
+    - .json
+    - .md
+    - .txt
+    - .properties
+  thread-pool-size: 5
