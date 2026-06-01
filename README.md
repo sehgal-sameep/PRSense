@@ -110,7 +110,7 @@ Add PRSense as a pipeline step in your `azure-pipelines.yml`:
 3. Commit your changes: `git commit -m "feat: add your feature"`
 4. Push and open a pull request
 
-Please open an issue first for major changes.
+Please open an issue first for major changes
 
 ---
 
