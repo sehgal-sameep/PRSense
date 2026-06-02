@@ -1,22 +1,19 @@
 package com.codewithsam.prsense.controller;
 
 import com.codewithsam.prsense.config.WebhookProperties;
+import com.codewithsam.prsense.dto.request.ReviewRequest;
+import com.codewithsam.prsense.dto.request.TriggerType;
 import com.codewithsam.prsense.dto.request.WebhookPayloadRequest;
 import com.codewithsam.prsense.dto.response.ReviewResponse;
-import com.codewithsam.prsense.manager.WebhookManager;
+import com.codewithsam.prsense.manager.ReviewManager;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
-import java.util.concurrent.Executor;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/webhook")
@@ -24,17 +21,17 @@ import java.util.concurrent.Executor;
 @Tag(name = "Webhook APIs", description = "APIs for handling Azure DevOps PR webhook events")
 public class WebhookController {
 
-    private final WebhookManager webhookManager;
-    private final WebhookProperties webhookProperties;
-    private final Executor reviewExecutor;
+    private static final Set<String> REVIEWABLE_EVENTS = Set.of(
+            "git.pullrequest.created",
+            "git.pullrequest.updated"
+    );
 
-    // Explicit constructor needed because @Qualifier isn't supported by @RequiredArgsConstructor
-    public WebhookController(WebhookManager webhookManager,
-                             WebhookProperties webhookProperties,
-                             @Qualifier("reviewExecutor") Executor reviewExecutor) {
-        this.webhookManager = webhookManager;
+    private final ReviewManager reviewManager;
+    private final WebhookProperties webhookProperties;
+
+    public WebhookController(ReviewManager reviewManager, WebhookProperties webhookProperties) {
+        this.reviewManager = reviewManager;
         this.webhookProperties = webhookProperties;
-        this.reviewExecutor = reviewExecutor;
     }
 
     @PostMapping("/pr-sense")
@@ -59,20 +56,32 @@ public class WebhookController {
                     .body(ReviewResponse.builder().status("bad_request").build());
         }
 
-        int prId = payload.getResource().getPullRequestId();
-        log.info("Accepted webhook: POST /webhook/pr-sense — eventType: {}, PR #{}",
-                payload.getEventType(), prId);
+        String eventType = payload.getEventType();
+        if (!REVIEWABLE_EVENTS.contains(eventType)) {
+            log.info("Ignoring unsupported event type: {}", eventType);
+            return ResponseEntity.ok(ReviewResponse.builder().status("ignored").build());
+        }
 
-        // Dispatch async so Azure DevOps gets an immediate response (avoids retry storms)
-        reviewExecutor.execute(() -> {
-            try {
-                webhookManager.handlePrWebhook(payload);
-            } catch (Exception e) {
-                log.error("Unhandled error during async PR review for PR #{}: {}", prId, e.getMessage(), e);
-            }
-        });
+        int prId = payload.getResource().getPullRequestId();
+        String repoId = payload.getResource().getRepository().getId();
+        String project = payload.getResource().getRepository().getProject().getName();
+
+        log.info("Accepted webhook — eventType: {}, PR #{}", eventType, prId);
+
+        ReviewRequest reviewRequest = ReviewRequest.builder()
+                .triggerType(TriggerType.WEBHOOK)
+                .repositoryId(repoId)
+                .pullRequestId(prId)
+                .projectName(project)
+                .build();
+
+        String reviewId = reviewManager.processReview(reviewRequest);
 
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(ReviewResponse.builder().status("accepted").prId(prId).build());
+                .body(ReviewResponse.builder()
+                        .reviewId(reviewId)
+                        .status("queued")
+                        .prId(prId)
+                        .build());
     }
 }

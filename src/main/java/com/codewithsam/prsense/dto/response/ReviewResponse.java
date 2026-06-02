@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class ReviewResponse {
 
+    private String reviewId;
     private String status;
     private Integer prId;
     private Integer filesReviewed;
