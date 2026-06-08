@@ -5,6 +5,7 @@ import com.codewithsam.prsense.dto.request.ReviewRequest;
 import com.codewithsam.prsense.dto.request.TriggerType;
 import com.codewithsam.prsense.dto.request.WebhookPayloadRequest;
 import com.codewithsam.prsense.dto.response.ReviewResponse;
+import com.codewithsam.prsense.manager.RepositorySyncManager;
 import com.codewithsam.prsense.manager.ReviewManager;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,7 +19,7 @@ import java.util.Set;
 @RestController
 @RequestMapping("/webhook")
 @Slf4j
-@Tag(name = "Webhook APIs", description = "APIs for handling Azure DevOps PR webhook events")
+@Tag(name = "Webhook APIs", description = "APIs for handling Azure DevOps PR and push webhook events")
 public class WebhookController {
 
     private static final Set<String> REVIEWABLE_EVENTS = Set.of(
@@ -27,10 +28,14 @@ public class WebhookController {
     );
 
     private final ReviewManager reviewManager;
+    private final RepositorySyncManager repositorySyncManager;
     private final WebhookProperties webhookProperties;
 
-    public WebhookController(ReviewManager reviewManager, WebhookProperties webhookProperties) {
+    public WebhookController(ReviewManager reviewManager,
+                             RepositorySyncManager repositorySyncManager,
+                             WebhookProperties webhookProperties) {
         this.reviewManager = reviewManager;
+        this.repositorySyncManager = repositorySyncManager;
         this.webhookProperties = webhookProperties;
     }
 
@@ -57,6 +62,17 @@ public class WebhookController {
         }
 
         String eventType = payload.getEventType();
+
+        // Push events trigger incremental repository sync (Strategy 1 — webhook-based)
+        if ("git.push".equals(eventType)) {
+            String repoIdForPush = payload.getResource().getRepository().getId();
+            String projectForPush = payload.getResource().getRepository().getProject().getName();
+            log.info("Push event received — project: '{}', repoId: '{}' — triggering incremental sync",
+                    projectForPush, repoIdForPush);
+            repositorySyncManager.syncByAzureRepoId(projectForPush, repoIdForPush);
+            return ResponseEntity.ok(ReviewResponse.builder().status("sync_triggered").build());
+        }
+
         if (!REVIEWABLE_EVENTS.contains(eventType)) {
             log.info("Ignoring unsupported event type: {}", eventType);
             return ResponseEntity.ok(ReviewResponse.builder().status("ignored").build());

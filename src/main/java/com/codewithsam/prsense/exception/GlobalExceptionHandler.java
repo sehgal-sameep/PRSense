@@ -1,6 +1,7 @@
 package com.codewithsam.prsense.exception;
 
 import com.codewithsam.prsense.dto.response.ErrorResponse;
+import com.codewithsam.prsense.mcp.exception.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -60,6 +61,31 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(error(ex.getMessage()));
+    }
+
+    @ExceptionHandler(ToolExecutionException.class)
+    public ResponseEntity<ErrorResponse> handleToolExecutionException(ToolExecutionException ex) {
+        log.error("MCP tool execution failed [{}]: {}", ex.getToolName(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(error("Tool execution failed [" + ex.getToolName() + "]: " + ex.getMessage()));
+    }
+
+    @ExceptionHandler({ReferenceSearchException.class, KnowledgeGraphException.class})
+    public ResponseEntity<ErrorResponse> handleKnowledgeExceptions(RuntimeException ex) {
+        log.error("Knowledge graph / reference search error: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error(ex.getMessage()));
+    }
+
+    @ExceptionHandler(ContextRetrievalException.class)
+    public ResponseEntity<ErrorResponse> handleContextRetrievalException(ContextRetrievalException ex) {
+        log.error("Context retrieval failed: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error(ex.getMessage()));
+    }
+
+    @ExceptionHandler(ReviewHistoryException.class)
+    public ResponseEntity<ErrorResponse> handleReviewHistoryException(ReviewHistoryException ex) {
+        log.warn("Review history error: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error(ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

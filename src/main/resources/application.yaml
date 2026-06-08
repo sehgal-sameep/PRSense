@@ -9,6 +9,21 @@ spring:
     ansi:
       enabled: always   # Force ANSI color codes even when output is piped
 
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}  # reuse the key already set under openai.api-key
+      chat:
+        options:
+          model: ${openai.model:gpt-4o}
+          max-tokens: 4096
+          temperature: 0.3
+    mcp:
+      server:
+        enabled: true
+        name: prsense-mcp-server
+        version: 1.0.0
+        type: SYNC            # Synchronous tool execution — compatible with Spring MVC
+
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5435/prsense}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
@@ -68,6 +83,29 @@ indexing:
   max-file-size-bytes: 102400    # 100 KB
   supported-extensions:
     - .java
+  sync-enabled: true
+  sync-interval-ms: 900000       # 15 minutes between scheduled syncs
+  sync-initial-delay-ms: 60000   # 1 minute delay before first scheduled sync
+
+prsense:
+  mcp:
+    enabled: true
+    default-search-limit: 10
+    max-search-limit: 50
+    server-name: prsense-mcp-server
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    prometheus:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
 
 vector:
   search-limit: 10

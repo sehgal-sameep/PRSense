@@ -5,7 +5,7 @@ import com.codewithsam.prsense.dto.request.ReviewRequest;
 import com.codewithsam.prsense.manager.ReviewManager;
 import com.codewithsam.prsense.model.*;
 import com.codewithsam.prsense.service.AzureDevOpsService;
-import com.codewithsam.prsense.service.OpenAiService;
+import com.codewithsam.prsense.service.AgentReviewService;
 import com.codewithsam.prsense.service.ReviewHistoryService;
 import com.codewithsam.prsense.util.CrossFileContextBuilder;
 import com.codewithsam.prsense.util.LanguageUtil;
@@ -26,18 +26,18 @@ import java.util.stream.Collectors;
 public class ReviewManagerImpl implements ReviewManager {
 
     private final AzureDevOpsService azureDevOpsService;
-    private final OpenAiService openAiService;
+    private final AgentReviewService agentReviewService;
     private final ReviewHistoryService reviewHistoryService;
     private final ReviewProperties reviewProperties;
     private final Executor reviewExecutor;
 
     public ReviewManagerImpl(AzureDevOpsService azureDevOpsService,
-                             OpenAiService openAiService,
+                             AgentReviewService agentReviewService,
                              ReviewHistoryService reviewHistoryService,
                              ReviewProperties reviewProperties,
                              @Qualifier("reviewExecutor") Executor reviewExecutor) {
         this.azureDevOpsService = azureDevOpsService;
-        this.openAiService = openAiService;
+        this.agentReviewService = agentReviewService;
         this.reviewHistoryService = reviewHistoryService;
         this.reviewProperties = reviewProperties;
         this.reviewExecutor = reviewExecutor;
@@ -150,6 +150,11 @@ public class ReviewManagerImpl implements ReviewManager {
                     record.getReviewId(), crossFileContext.length(), allDiffs.size());
         }
 
+        // Collect all changed file paths so the agent can pass them to retrieve_context
+        List<String> allChangedFilePaths = allDiffs.stream().map(FileDiff::getPath).toList();
+        log.info("[{}] Passing {} file path(s) to agent for tool-assisted context retrieval",
+                record.getReviewId(), allChangedFilePaths.size());
+
         ReviewSummary summary = new ReviewSummary();
         int filesReviewed = 0;
         int totalComments = 0;
@@ -157,7 +162,7 @@ public class ReviewManagerImpl implements ReviewManager {
         for (FileDiff fileDiff : allDiffs) {
             try {
                 List<LineComment> comments = reviewSingleFile(
-                        prDetails, project, repoId, prId, fileDiff, crossFileContext);
+                        prDetails, project, repoId, prId, fileDiff, crossFileContext, allChangedFilePaths);
                 summary.addFile(fileDiff.getPath(), comments);
                 if (!comments.isEmpty()) {
                     filesReviewed++;
@@ -201,11 +206,15 @@ public class ReviewManagerImpl implements ReviewManager {
     }
 
     private List<LineComment> reviewSingleFile(PrDetails prDetails, String project, String repoId,
-                                               int prId, FileDiff fileDiff, String crossFileContext) {
+                                               int prId, FileDiff fileDiff, String crossFileContext,
+                                               List<String> allChangedFilePaths) {
         String path = fileDiff.getPath();
         log.info("Reviewing: {}", path);
 
-        List<LineComment> lineComments = openAiService.reviewFile(prDetails, fileDiff, crossFileContext);
+        // Agent call — LLM decides which MCP tools to invoke before generating the review.
+        // Confirm tool usage by watching for "Tool execution started" logs immediately after this line.
+        List<LineComment> lineComments = agentReviewService.reviewFile(
+                prDetails, fileDiff, crossFileContext, project, allChangedFilePaths);
 
         if (lineComments.isEmpty()) {
             log.info("No issues in: {}", path);
